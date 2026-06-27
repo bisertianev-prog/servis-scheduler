@@ -100,6 +100,19 @@ const sb = {
     if (!r.ok) return [];
     return r.json();
   },
+  async pingPresence(token, email) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/presence?on_conflict=email`, {
+      method: "POST",
+      headers: { ...this.authHeaders(token), "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify({ email, last_seen: new Date().toISOString() }),
+    });
+    return r.ok;
+  },
+  async loadPresence(token) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/presence?select=*`, { headers: this.authHeaders(token) });
+    if (!r.ok) return [];
+    return r.json();
+  },
   async upsertLock(token, id, deviceId) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/slot_locks?on_conflict=id`, {
       method: "POST",
@@ -157,7 +170,12 @@ function HTBadge() {
     </a>
   );
 }
-const CAR_BRANDS=["Audi","BMW","Cadillac","Chevrolet","Citroen","Dodge","Ferrari","Fiat","Ford","Honda","Infiniti","Jeep","Lamborghini","Lexus","Mazda","Mercedes","Mitsubishi","Nissan","Peugeot","Porsche","Renault","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
+const USERS = [
+  { email: "bisertianev@gmail.com",   initial: "Б" },
+  { email: "ivantyanev74@gmail.com",  initial: "И" },
+  { email: "naskoservice@service.com",initial: "А" },
+  { email: "worker4@servis.com",      initial: "Р" },
+];["Audi","BMW","Cadillac","Chevrolet","Citroen","Dodge","Ferrari","Fiat","Ford","Honda","Infiniti","Jeep","Lamborghini","Lexus","Mazda","Mercedes","Mitsubishi","Nissan","Peugeot","Porsche","Renault","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 const CAR_COLORS=["Бял","Черен","Сив","Сребрист","Червен","Син","Зелен","Жълт","Оранжев","Кафяв","Бежов","Виолетов","Златист","Тъмносин","Тъмночервен","Перлен"];
 
 // Брои използването на марките от резервациите и сортира
@@ -230,6 +248,8 @@ function Scheduler({session,onLogout}) {
   const [deleteConfirm,setDeleteConfirm]=useState(false);
   const [toast,setToast]=useState(null);
   const [syncing,setSyncing]=useState(false);
+  const [presence,setPresence]=useState({});  // { email: last_seen }
+  const ACTIVE_TTL = 2 * 60 * 1000; // 2 минути
   const myLockRef=useRef(null),lockTimerRef=useRef(null);
 
   // Auto-refresh token every 50 minutes
@@ -245,6 +265,20 @@ function Scheduler({session,onLogout}) {
   const locksToMap=rows=>{const map={},now=Date.now();for(const r of rows){if(now-new Date(r.locked_at).getTime()<LOCK_TTL)map[r.id]={device_id:r.device_id,locked_at:r.locked_at};}return map;};
 
   useEffect(()=>{(async()=>{const[bRows,lRows]=await Promise.all([sb.loadBookings(token),sb.loadLocks(token)]);setBookings(rowsToMap(bRows));setLocks(locksToMap(lRows));})();},[token]);
+
+  // Ping presence при зареждане и на всеки 30 сек
+  useEffect(()=>{
+    const ping = async () => {
+      await sb.pingPresence(token, session.email);
+      const rows = await sb.loadPresence(token);
+      const map = {};
+      rows.forEach(r => { map[r.email] = r.last_seen; });
+      setPresence(map);
+    };
+    ping();
+    const id = setInterval(ping, 30000);
+    return () => clearInterval(id);
+  },[token, session.email]);
   useEffect(()=>{const id=setInterval(async()=>{setSyncing(true);const[bRows,lRows]=await Promise.all([sb.loadBookings(token),sb.loadLocks(token)]);setBookings(rowsToMap(bRows));setLocks(locksToMap(lRows));setSyncing(false);},POLL_MS);return()=>clearInterval(id);},[token]);
 
   const acquireLock=useCallback(async(dateKey,slot)=>{const lockId=`${dateKey}|${slot}`;const ex=locks[lockId];if(ex&&ex.device_id!==DEVICE_ID)return false;await sb.upsertLock(token,lockId,DEVICE_ID);myLockRef.current=lockId;setLocks(l=>({...l,[lockId]:{device_id:DEVICE_ID,locked_at:new Date().toISOString()}}));return true;},[locks,token]);
@@ -292,11 +326,21 @@ function Scheduler({session,onLogout}) {
               {view==="day"?(<><div style={{fontSize:18,fontWeight:700}}>{DAYS_FULL[currentDate.getDay()]}</div><div style={{fontSize:12,color:"#94a3b8",marginTop:1}}>{currentDate.getDate()} {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}</div></>):(<><div style={{fontSize:18,fontWeight:700}}>Седмица</div><div style={{fontSize:12,color:"#94a3b8",marginTop:1}}>{wDays[0].getDate()} – {wDays[4].getDate()} {MONTHS[wDays[4].getMonth()]}</div></>)}
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
             {syncing&&<div style={{width:8,height:8,borderRadius:"50%",background:"#38bdf8"}}/>}
-            {!isToday&&<button style={{background:"transparent",border:"1.5px solid #475569",color:"#94a3b8",fontSize:12,fontWeight:600,padding:"4px 12px",borderRadius:20,cursor:"pointer"}} onClick={()=>{const t=new Date();setCurrentDate(isWeekend(t)?skipWE(t,1):t);}}>Днес</button>}
-            {isToday&&view==="day"&&<div style={{background:"#3b82f6",color:"#fff",fontSize:12,fontWeight:700,padding:"4px 12px",borderRadius:20}}>Днес</div>}
-            <button style={{background:"#334155",border:"none",color:"#94a3b8",fontSize:16,width:32,height:32,borderRadius:8,cursor:"pointer"}} onClick={handleLogout} title="Изход">⏏</button>
+            {!isToday&&<button style={{background:"transparent",border:"1.5px solid #475569",color:"#94a3b8",fontSize:12,fontWeight:600,padding:"4px 10px",borderRadius:20,cursor:"pointer"}} onClick={()=>{const t=new Date();setCurrentDate(isWeekend(t)?skipWE(t,1):t);}}>Днес</button>}
+            {isToday&&view==="day"&&<div style={{background:"#3b82f6",color:"#fff",fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:20}}>Днес</div>}
+            <div style={{display:"flex",gap:4,marginLeft:4}}>
+              {USERS.map(u=>{
+                const active = presence[u.email] && (Date.now()-new Date(presence[u.email]).getTime() < ACTIVE_TTL);
+                return(
+                  <div key={u.email} title={u.email} style={{width:28,height:28,borderRadius:"50%",background:active?"#16a34a":"#dc2626",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff",border:"2px solid #1e293b"}}>
+                    {u.initial}
+                  </div>
+                );
+              })}
+            </div>
+            <button style={{background:"#334155",border:"none",color:"#94a3b8",fontSize:16,width:30,height:30,borderRadius:8,cursor:"pointer"}} onClick={handleLogout} title="Изход">⏏</button>
           </div>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12}}>
