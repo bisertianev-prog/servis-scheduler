@@ -4,12 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>АвтоГеометрия — Планер</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #f1f5f9; font-family: 'Segoe UI', system-ui, sans-serif; }
+  .ht-badge { display:inline-flex; align-items:center; gap:7px; text-decoration:none; opacity:.65; transition:opacity .2s,transform .2s; vertical-align:middle; }
+  .ht-badge:hover { opacity:1; transform:scale(1.04); }
+  .ht-badge svg { flex-shrink:0; border-radius:50%; }
+  .ht-badge__text { font-family:'Playfair Display',Georgia,serif; font-weight:700; font-size:14px; color:#9a9a9a; letter-spacing:.01em; line-height:1; }
+  .ht-badge__accent { color:#e8541a; }
+  .ht-badge__copy { font-size:12px; color:#9a9a9a; letter-spacing:.02em; }
 </style>
 </head>
 <body>
@@ -125,6 +133,29 @@ function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function skipWE(d,dir){let x=addDays(d,dir);while(isWeekend(x))x=addDays(x,dir);return x;}
 function weekDays(date){const d=new Date(date),day=d.getDay(),diff=day===0?-6:1-day;return[0,1,2,3,4].map(i=>addDays(addDays(d,diff),i));}
 const LOGO_URL = "https://bisertianev-prog.github.io/servis-scheduler/logo.jpg";
+
+function HTBadge() {
+  return (
+    <a href="https://hipstertoucan.com" target="_blank" rel="noopener" className="ht-badge" title="Webdesign by HipsterToucan">
+      <svg width="24" height="24" viewBox="0 0 36 36" aria-hidden="true">
+        <circle cx="18" cy="18" r="18" fill="#111010"/>
+        <ellipse cx="17" cy="20" rx="7" ry="8.5" fill="#1a1a1a"/>
+        <circle cx="18" cy="12" r="6.5" fill="#1e1e1e"/>
+        <ellipse cx="17" cy="21" rx="4.5" ry="5.5" fill="#f4efe4"/>
+        <circle cx="20" cy="11" r="2.5" fill="#f4efe4"/>
+        <circle cx="20.5" cy="10.8" r="1.3" fill="#111010"/>
+        <circle cx="21" cy="10.3" r="0.45" fill="#fff"/>
+        <path d="M23 13 Q32 10.5 31 16.5 Q30 20 23 17.5 Z" fill="#e8541a"/>
+        <path d="M23 13 Q32 10.5 31 16.5" fill="none" stroke="#c0390a" strokeWidth="0.7"/>
+        <rect x="13" y="26" width="5" height="7" rx="2" fill="#1aab74"/>
+        <rect x="20" y="26" width="5" height="7" rx="2" fill="#1aab74"/>
+        <rect x="8" y="27" width="20" height="3" rx="1.5" fill="#1aab74"/>
+      </svg>
+      <span className="ht-badge__text">Hipster<span className="ht-badge__accent">Toucan</span></span>
+      <span className="ht-badge__copy">® {new Date().getFullYear()}</span>
+    </a>
+  );
+}
 const CAR_BRANDS=["Audi","BMW","Cadillac","Chevrolet","Citroen","Dodge","Ferrari","Fiat","Ford","Honda","Infiniti","Jeep","Lamborghini","Lexus","Mazda","Mercedes","Mitsubishi","Nissan","Peugeot","Porsche","Renault","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 const CAR_COLORS=["Бял","Черен","Сив","Сребрист","Червен","Син","Зелен","Жълт","Оранжев","Кафяв","Бежов","Виолетов","Златист","Тъмносин","Тъмночервен","Перлен"];
 
@@ -181,6 +212,7 @@ function LoginScreen({onLogin}) {
         {error&&<div style={{background:"#450a0a",color:"#fca5a5",padding:"10px 14px",borderRadius:10,fontSize:13,marginBottom:12,textAlign:"center"}}>{error}</div>}
         <button style={{width:"100%",background:"#3b82f6",color:"#fff",border:"none",borderRadius:12,padding:"14px 0",fontSize:16,fontWeight:700,cursor:"pointer",opacity:(email&&password&&!loading)?1:0.5}}
           onClick={handleLogin} disabled={loading}>{loading?"Влизане…":"Вход"}</button>
+        <div style={{textAlign:"center",marginTop:24}}><HTBadge/></div>
       </div>
     </div>
   );
@@ -338,6 +370,7 @@ function Scheduler({session,onLogout}) {
         </div>
       </div>}
       {toast&&<div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#1e293b",color:"#fff",padding:"12px 24px",borderRadius:20,fontSize:14,fontWeight:600,zIndex:200,whiteSpace:"nowrap"}}>{toast}</div>}
+      <div style={{textAlign:"center",padding:"20px 0 8px"}}><HTBadge/></div>
     </div>
   );
 }
