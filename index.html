@@ -312,18 +312,24 @@ function Scheduler({session,onLogout}) {
         </div>
       </div>
 
-      {view==="day"&&<div style={{padding:"0 10px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+      {view==="day"&&<div style={{padding:"0 8px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
         {ALL_SLOTS.map(slot=>{const st=slotStatus(dateKey,slot),bk=dayBook[slot];return(
-          <div key={slot} style={{borderRadius:10,padding:"8px 10px",cursor:"pointer",display:"flex",flexDirection:"column",justifyContent:"center",minHeight:52,...slotStyle(st)}} onClick={()=>openSlot(dateKey,slot)}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:13,fontWeight:800,color:"#1e293b",minWidth:38}}>{slot}</span>
-              {st==="booked"&&<>
-                <span style={{fontSize:12,fontWeight:600,color:"#1e293b",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bk.marka}{bk.cvqt?` · ${bk.cvqt}`:""}</span>
-                <span style={{fontSize:11,fontWeight:700,color:bk.deynost==="Реглаж"?"#2563eb":"#7c3aed",whiteSpace:"nowrap"}}>{bk.deynost}</span>
-              </>}
-              {st==="locked"&&<span style={{fontSize:11,color:"#b45309",fontWeight:600}}>⏳ Въвежда се…</span>}
-              {st==="free"&&<span style={{fontSize:12,color:"#16a34a",fontWeight:600}}>+ Свободен</span>}
-            </div>
+          <div key={slot} style={{borderRadius:10,padding:"7px 9px",cursor:"pointer",minHeight:50,...slotStyle(st)}} onClick={()=>openSlot(dateKey,slot)}>
+            {st==="booked"&&<>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,fontWeight:800,color:"#1e293b"}}>{slot}</span>
+                <span style={{fontSize:11,fontWeight:700,color:bk.deynost==="Реглаж"?"#2563eb":"#7c3aed"}}>{bk.deynost}</span>
+              </div>
+              <div style={{fontSize:11,color:"#475569",marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bk.marka}{bk.cvqt?` · ${bk.cvqt}`:""}</div>
+            </>}
+            {st==="locked"&&<>
+              <div style={{fontSize:13,fontWeight:800,color:"#1e293b"}}>{slot}</div>
+              <div style={{fontSize:10,color:"#b45309",fontWeight:600,marginTop:3}}>⏳ Въвежда се…</div>
+            </>}
+            {st==="free"&&<>
+              <div style={{fontSize:13,fontWeight:800,color:"#1e293b"}}>{slot}</div>
+              <div style={{fontSize:11,color:"#16a34a",fontWeight:600,marginTop:3}}>+ Свободен</div>
+            </>}
           </div>
         );})}
       </div>}
