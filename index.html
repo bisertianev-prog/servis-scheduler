@@ -303,6 +303,7 @@ function Scheduler({session,onLogout}) {
       await releaseLock();
       setModal(null);
       showToast("✓ Резервацията е запазена");
+      if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
     } else {
       showToast("⚠️ Грешка при запис — опитай отново");
       await releaseLock();
