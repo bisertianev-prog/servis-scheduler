@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Сервизен Планер</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #f1f5f9; font-family: 'Segoe UI', system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const SUPABASE_URL = "https://yxjuzpblsygbepepkbjf.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4anV6cGJsc3lnYmVwZXBrYmpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NjYyMDIsImV4cCI6MjA5ODE0MjIwMn0.lPjyYSsRMPEqNdNFmyiZNtLefREIHh_2ERY90xYXLk8";
+
+const sb = {
+  headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY },
+  authHeaders(token) { return { ...this.headers, "Authorization": `Bearer ${token}` }; },
+  async signIn(email, password) {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST", headers: this.headers,
+      body: JSON.stringify({ email, password }),
+    });
+    return r.json();
+  },
+  async signOut(token) {
+    await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.authHeaders(token) });
+  },
+  async loadBookings(token) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*`, { headers: this.authHeaders(token) });
+    if (!r.ok) return [];
+    return r.json();
+  },
+  async upsertBooking(token, booking) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/bookings?on_conflict=date,slot`, {
+      method: "POST",
+      headers: { ...this.authHeaders(token), "Prefer": "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(booking),
+    });
+    return r.ok;
+  },
+  async deleteBooking(token, date, slot) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/bookings?date=eq.${date}&slot=eq.${slot}:00`, {
+      method: "DELETE", headers: this.authHeaders(token),
+    });
+    return r.ok;
+  },
+  async loadLocks(token) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/slot_locks?select=*`, { headers: this.authHeaders(token) });
+    if (!r.ok) return [];
+    return r.json();
+  },
+  async upsertLock(token, id, deviceId) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/slot_locks?on_conflict=id`, {
+      method: "POST",
+      headers: { ...this.authHeaders(token), "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify({ id, device_id: deviceId, locked_at: new Date().toISOString() }),
+    });
+    return r.ok;
+  },
+  async deleteLock(token, id) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/slot_locks?id=eq.${encodeURIComponent(id)}`, {
+      method: "DELETE", headers: this.authHeaders(token),
+    });
+    return r.ok;
+  },
+};
+
+const WORK_START = 8*60, WORK_END = 16*60+30, SLOT_MIN = 30, POLL_MS = 3000, LOCK_TTL = 20000;
+function makeSlots() {
+  const s=[];
+  for(let t=WORK_START;t<=WORK_END;t+=SLOT_MIN)
+    s.push(`${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`);
+  return s;
+}
+const ALL_SLOTS = makeSlots();
+const MONTHS=["яну","фев","мар","апр","май","юни","юли","авг","сеп","окт","ное","дек"];
+const DAYS=["Нед","Пон","Вто","Сря","Чет","Пет","Съб"];
+const DAYS_FULL=["Неделя","Понеделник","Вторник","Сряда","Четвъртък","Петък","Събота"];
+function fmtDate(d){return d.toISOString().split("T")[0];}
+function isWeekend(d){return d.getDay()===0||d.getDay()===6;}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function skipWE(d,dir){let x=addDays(d,dir);while(isWeekend(x))x=addDays(x,dir);return x;}
+function weekDays(date){const d=new Date(date),day=d.getDay(),diff=day===0?-6:1-day;return[0,1,2,3,4].map(i=>addDays(addDays(d,diff),i));}
+const DEVICE_ID=`dev-${Math.random().toString(36).slice(2,7)}`;
+const CAR_BRANDS=["Alfa Romeo","Audi","BMW","Chevrolet","Citroën","Dacia","Fiat","Ford","Honda","Hyundai","Jaguar","Jeep","Kia","Lada","Land Rover","Lexus","Mazda","Mercedes-Benz","Mini","Mitsubishi","Nissan","Opel","Peugeot","Porsche","Renault","Seat","Skoda","Subaru","Suzuki","Tesla","Toyota","Volkswagen","Volvo"];
+const CAR_COLORS=["Бял","Черен","Сив","Сребрист","Червен","Син","Зелен","Жълт","Оранжев","Кафяв","Бежов","Виолетов","Златист","Тъмносин","Тъмночервен","Перлен"];
+
+function LoginScreen({onLogin}) {
+  const [email,setEmail]=useState(""),[ password,setPassword]=useState(""),[ loading,setLoading]=useState(false),[error,setError]=useState("");
+  const handleLogin=async()=>{
+    if(!email.trim()||!password.trim())return;
+    setLoading(true);setError("");
+    const data=await sb.signIn(email.trim(),password);
+    if(data.access_token){
+      localStorage.setItem("sb_session",JSON.stringify({token:data.access_token,email:data.user?.email}));
+      onLogin({token:data.access_token,email:data.user?.email});
+    } else {
+      setError(data.error_description||data.msg||"Грешен имейл или парола");
+    }
+    setLoading(false);
+  };
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#1e293b",borderRadius:24,padding:"40px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
+        <div style={{fontSize:48,textAlign:"center",marginBottom:12}}>🔧</div>
+        <div style={{fontSize:24,fontWeight:800,color:"#fff",textAlign:"center",marginBottom:4}}>Сервизен Планер</div>
+        <div style={{fontSize:13,color:"#64748b",textAlign:"center",marginBottom:28}}>Само оторизиран персонал</div>
+        <div style={{marginBottom:16}}>
+          <label style={{fontSize:11,color:"#94a3b8",fontWeight:700,display:"block",marginBottom:6,textTransform:"uppercase"}}>Имейл</label>
+          <input style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1.5px solid #334155",background:"#0f172a",color:"#fff",fontSize:15,outline:"none",boxSizing:"border-box"}}
+            type="email" placeholder="your@email.com" value={email}
+            onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoFocus />
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{fontSize:11,color:"#94a3b8",fontWeight:700,display:"block",marginBottom:6,textTransform:"uppercase"}}>Парола</label>
+          <input style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1.5px solid #334155",background:"#0f172a",color:"#fff",fontSize:15,outline:"none",boxSizing:"border-box"}}
+            type="password" placeholder="••••••••" value={password}
+            onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} />
+        </div>
+        {error&&<div style={{background:"#450a0a",color:"#fca5a5",padding:"10px 14px",borderRadius:10,fontSize:13,marginBottom:12,textAlign:"center"}}>{error}</div>}
+        <button style={{width:"100%",background:"#3b82f6",color:"#fff",border:"none",borderRadius:12,padding:"14px 0",fontSize:16,fontWeight:700,cursor:"pointer",opacity:(email&&password&&!loading)?1:0.5}}
+          onClick={handleLogin} disabled={loading}>{loading?"Влизане…":"Вход"}</button>
+      </div>
+    </div>
+  );
+}
+
+function Scheduler({session,onLogout}) {
+  const todayReal=new Date(),todayKey=fmtDate(todayReal),token=session.token;
+  const [view,setView]=useState("day");
+  const [currentDate,setCurrentDate]=useState(isWeekend(todayReal)?skipWE(todayReal,1):todayReal);
+  const [bookings,setBookings]=useState({});
+  const [locks,setLocks]=useState({});
+  const [modal,setModal]=useState(null);
+  const [form,setForm]=useState({marka:"",cvqt:"",deynost:""});
+  const [deleteConfirm,setDeleteConfirm]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [syncing,setSyncing]=useState(false);
+  const myLockRef=useRef(null),lockTimerRef=useRef(null);
+
+  const rowsToMap=rows=>{const map={};for(const r of rows){const slot=r.slot.slice(0,5);if(!map[r.date])map[r.date]={};map[r.date][slot]={marka:r.marka,cvqt:r.cvqt||"",deynost:r.deynost};}return map;};
+  const locksToMap=rows=>{const map={},now=Date.now();for(const r of rows){if(now-new Date(r.locked_at).getTime()<LOCK_TTL)map[r.id]={device_id:r.device_id,locked_at:r.locked_at};}return map;};
+
+  useEffect(()=>{(async()=>{const[bRows,lRows]=await Promise.all([sb.loadBookings(token),sb.loadLocks(token)]);setBookings(rowsToMap(bRows));setLocks(locksToMap(lRows));})();},[token]);
+  useEffect(()=>{const id=setInterval(async()=>{setSyncing(true);const[bRows,lRows]=await Promise.all([sb.loadBookings(token),sb.loadLocks(token)]);setBookings(rowsToMap(bRows));setLocks(locksToMap(lRows));setSyncing(false);},POLL_MS);return()=>clearInterval(id);},[token]);
+
+  const acquireLock=useCallback(async(dateKey,slot)=>{const lockId=`${dateKey}|${slot}`;const ex=locks[lockId];if(ex&&ex.device_id!==DEVICE_ID)return false;await sb.upsertLock(token,lockId,DEVICE_ID);myLockRef.current=lockId;setLocks(l=>({...l,[lockId]:{device_id:DEVICE_ID,locked_at:new Date().toISOString()}}));return true;},[locks,token]);
+  const releaseLock=useCallback(async()=>{if(!myLockRef.current)return;const lockId=myLockRef.current;myLockRef.current=null;if(lockTimerRef.current)clearInterval(lockTimerRef.current);await sb.deleteLock(token,lockId);setLocks(l=>{const n={...l};delete n[lockId];return n;});},[token]);
+  const refreshLock=useCallback(async()=>{if(!myLockRef.current)return;await sb.upsertLock(token,myLockRef.current,DEVICE_ID);},[token]);
+
+  const openSlot=useCallback(async(dateKey,slot)=>{const bk=(bookings[dateKey]||{})[slot];if(bk){setModal({dateKey,slot,mode:"view"});return;}const lockId=`${dateKey}|${slot}`;const ex=locks[lockId];if(ex&&ex.device_id!==DEVICE_ID){showToast("⏳ Часът се въвежда от друг служител");return;}const ok=await acquireLock(dateKey,slot);if(!ok){showToast("⏳ Часът се въвежда от друг служител");return;}lockTimerRef.current=setInterval(refreshLock,8000);setForm({marka:"",cvqt:"",deynost:""});setModal({dateKey,slot,mode:"add"});},[bookings,locks,acquireLock,refreshLock]);
+  const closeModal=useCallback(async()=>{await releaseLock();setModal(null);setDeleteConfirm(false);},[releaseLock]);
+  const saveBooking=useCallback(async()=>{if(!form.marka.trim()||!form.deynost||!modal)return;const entry={marka:form.marka.trim(),cvqt:form.cvqt.trim(),deynost:form.deynost};setBookings(b=>({...b,[modal.dateKey]:{...(b[modal.dateKey]||{}),[modal.slot]:entry}}));await releaseLock();setModal(null);showToast("✓ Резервацията е запазена");await sb.upsertBooking(token,{date:modal.dateKey,slot:modal.slot+":00",...entry});},[form,modal,token,releaseLock]);
+  const deleteBooking=useCallback(async()=>{if(!modal)return;setBookings(b=>{const n={...b,[modal.dateKey]:{...(b[modal.dateKey]||{})}};delete n[modal.dateKey][modal.slot];return n;});setModal(null);setDeleteConfirm(false);showToast("✓ Резервацията е изтрита");await sb.deleteBooking(token,modal.dateKey,modal.slot);},[modal,token]);
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2800);};
+  const handleLogout=async()=>{await sb.signOut(token);localStorage.removeItem("sb_session");onLogout();};
+
+  const dateKey=fmtDate(currentDate),dayBook=bookings[dateKey]||{},bookedCnt=Object.keys(dayBook).length,freeCnt=ALL_SLOTS.length-bookedCnt,isToday=dateKey===todayKey,wDays=weekDays(currentDate);
+  const slotStatus=(dk,slot)=>{if((bookings[dk]||{})[slot])return"booked";const lk=locks[`${dk}|${slot}`];if(lk&&lk.device_id!==DEVICE_ID)return"locked";return"free";};
+  const slotStyle=st=>st==="booked"?{background:"#fff",borderTop:"3px solid #ef4444",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}:st==="locked"?{background:"#fffbeb",borderTop:"3px solid #f59e0b"}:{background:"#f0fdf4",borderTop:"3px solid #22c55e"};
+
+  return (
+    <div style={{fontFamily:"'Segoe UI',system-ui,sans-serif",background:"#f1f5f9",minHeight:"100vh",maxWidth:480,margin:"0 auto",paddingBottom:40}}>
+      <div style={{background:"#1e293b",color:"#fff",padding:"20px 16px 14px",borderRadius:"0 0 20px 20px",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+          <div>
+            {view==="day"?(<><div style={{fontSize:22,fontWeight:700}}>{DAYS_FULL[currentDate.getDay()]}</div><div style={{fontSize:13,color:"#94a3b8",marginTop:2}}>{currentDate.getDate()} {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}</div></>):(<><div style={{fontSize:22,fontWeight:700}}>Седмица</div><div style={{fontSize:13,color:"#94a3b8",marginTop:2}}>{wDays[0].getDate()} – {wDays[4].getDate()} {MONTHS[wDays[4].getMonth()]}</div></>)}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+            {syncing&&<div style={{width:8,height:8,borderRadius:"50%",background:"#38bdf8"}}/>}
+            {!isToday&&<button style={{background:"transparent",border:"1.5px solid #475569",color:"#94a3b8",fontSize:12,fontWeight:600,padding:"4px 12px",borderRadius:20,cursor:"pointer"}} onClick={()=>{const t=new Date();setCurrentDate(isWeekend(t)?skipWE(t,1):t);}}>Днес</button>}
+            {isToday&&view==="day"&&<div style={{background:"#3b82f6",color:"#fff",fontSize:12,fontWeight:700,padding:"4px 12px",borderRadius:20}}>Днес</div>}
+            <button style={{background:"#334155",border:"none",color:"#94a3b8",fontSize:16,width:32,height:32,borderRadius:8,cursor:"pointer"}} onClick={handleLogout} title="Изход">⏏</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          <button style={{flex:1,border:"none",fontSize:13,fontWeight:600,padding:"8px 0",borderRadius:10,cursor:"pointer",background:view==="day"?"#3b82f6":"#334155",color:view==="day"?"#fff":"#94a3b8"}} onClick={()=>setView("day")}>Ден</button>
+          <button style={{flex:1,border:"none",fontSize:13,fontWeight:600,padding:"8px 0",borderRadius:10,cursor:"pointer",background:view==="week"?"#3b82f6":"#334155",color:view==="week"?"#fff":"#94a3b8"}} onClick={()=>setView("week")}>Седмица</button>
+        </div>
+        {view==="day"&&<div style={{display:"flex",gap:16,marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:9,height:9,borderRadius:"50%",background:"#ef4444"}}/><span style={{fontSize:13,color:"#cbd5e1"}}>{bookedCnt} заети</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:9,height:9,borderRadius:"50%",background:"#22c55e"}}/><span style={{fontSize:13,color:"#cbd5e1"}}>{freeCnt} свободни</span></div>
+        </div>}
+        <div style={{display:"flex",gap:10}}>
+          <button style={{flex:1,background:"#334155",border:"none",color:"#e2e8f0",fontSize:13,fontWeight:600,padding:"10px 0",borderRadius:12,cursor:"pointer"}} onClick={()=>view==="day"?setCurrentDate(d=>skipWE(d,-1)):setCurrentDate(d=>addDays(d,-7))}>‹ {view==="day"?"Предишен":"Пред. седм."}</button>
+          <button style={{flex:1,background:"#334155",border:"none",color:"#e2e8f0",fontSize:13,fontWeight:600,padding:"10px 0",borderRadius:12,cursor:"pointer"}} onClick={()=>view==="day"?setCurrentDate(d=>skipWE(d,1)):setCurrentDate(d=>addDays(d,7))}>{view==="day"?"Следващ":"Следв. седм."} ›</button>
+        </div>
+      </div>
+
+      {view==="day"&&<div style={{padding:"0 10px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {ALL_SLOTS.map(slot=>{const st=slotStatus(dateKey,slot),bk=dayBook[slot];return(
+          <div key={slot} style={{borderRadius:12,padding:"10px 10px 8px",cursor:"pointer",minHeight:64,display:"flex",flexDirection:"column",gap:3,...slotStyle(st)}} onClick={()=>openSlot(dateKey,slot)}>
+            <div style={{fontSize:15,fontWeight:800,color:"#1e293b"}}>{slot}</div>
+            {st==="booked"&&<div><div style={{fontSize:12,fontWeight:600,color:"#1e293b"}}>{bk.marka}</div>{bk.cvqt&&<div style={{fontSize:11,color:"#64748b"}}>{bk.cvqt}</div>}<div style={{fontSize:11,fontWeight:700,color:bk.deynost==="Реглаж"?"#2563eb":"#7c3aed"}}>{bk.deynost}</div></div>}
+            {st==="locked"&&<div style={{fontSize:11,color:"#b45309",fontWeight:600}}>⏳ Въвежда се…</div>}
+            {st==="free"&&<div style={{fontSize:12,color:"#16a34a",fontWeight:600}}>+ Свободен</div>}
+          </div>
+        );})}
+      </div>}
+
+      {view==="week"&&<div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,padding:"0 12px"}}>
+        {wDays.map(day=>{const dk=fmtDate(day),bk=bookings[dk]||{},booked=Object.keys(bk).length,free=ALL_SLOTS.length-booked,isTd=dk===todayKey;return(
+          <div key={dk} style={{background:isTd?"#eff6ff":"#fff",border:isTd?"2px solid #3b82f6":"none",borderRadius:16,padding:"14px 8px 12px",cursor:"pointer",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={()=>{setCurrentDate(day);setView("day");}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{DAYS[day.getDay()]}</div>
+            <div style={{fontSize:22,fontWeight:800,color:isTd?"#3b82f6":"#1e293b"}}>{day.getDate()}</div>
+            <div style={{width:"80%",height:5,background:"#e2e8f0",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:"#ef4444",borderRadius:4,width:`${(booked/ALL_SLOTS.length)*100}%`}}/></div>
+            <div style={{fontSize:11,color:"#16a34a",fontWeight:700}}>{free} св.</div>
+            <div style={{fontSize:11,color:"#ef4444",fontWeight:600}}>{booked} зает.</div>
+          </div>
+        );})}
+      </div>}
+
+      {modal&&<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:100}} onClick={closeModal}>
+        <div style={{background:"#fff",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:480,boxShadow:"0 -4px 30px rgba(0,0,0,0.15)",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+          {modal.mode==="view"?(
+            <>
+              <div style={{fontSize:18,fontWeight:700,color:"#1e293b",marginBottom:18}}>Резервация {modal.slot}</div>
+              {["marka","cvqt","deynost"].map(f=>{const val=(bookings[modal.dateKey]||{})[modal.slot]?.[f];return val?<div key={f} style={{marginBottom:12}}><div style={{fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{f==="marka"?"Марка":f==="cvqt"?"Цвят":"Дейност"}</div><div style={{fontSize:15,color:"#1e293b",fontWeight:500}}>{val}</div></div>:null;})}
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
+                {deleteConfirm?(<><div style={{textAlign:"center",color:"#dc2626",fontWeight:600,fontSize:14,marginBottom:4}}>Изтрий резервацията?</div><button style={{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:12,padding:"13px 0",fontSize:15,fontWeight:700,cursor:"pointer"}} onClick={deleteBooking}>Да, изтрий</button><button style={{background:"#f1f5f9",color:"#475569",border:"none",borderRadius:12,padding:"13px 0",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={()=>setDeleteConfirm(false)}>Отказ</button></>):(<><button style={{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:12,padding:"13px 0",fontSize:15,fontWeight:700,cursor:"pointer"}} onClick={()=>setDeleteConfirm(true)}>Изтрий</button><button style={{background:"#f1f5f9",color:"#475569",border:"none",borderRadius:12,padding:"13px 0",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={closeModal}>Затвори</button></>)}
+              </div>
+            </>
+          ):(
+            <>
+              <div style={{fontSize:18,fontWeight:700,color:"#1e293b",marginBottom:18}}>Нова резервация — {modal.slot}</div>
+              {[["marka","Марка *",CAR_BRANDS,"Напр. Audi, BMW…",true],["cvqt","Цвят",CAR_COLORS,"Напр. Червен, Бял…",false]].map(([field,lbl,sugg,ph,af])=>(
+                <ACField key={field} label={lbl} value={form[field]} onChange={v=>setForm(f=>({...f,[field]:v}))} suggestions={sugg} placeholder={ph} autoFocus={af}/>
+              ))}
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,color:"#64748b",fontWeight:700,display:"block",marginBottom:6,textTransform:"uppercase"}}>Дейност *</label>
+                <div style={{display:"flex",gap:10}}>
+                  {["Реглаж","Диагностика"].map(d=><button key={d} style={{flex:1,padding:"11px 0",borderRadius:12,border:"1.5px solid #e2e8f0",background:form.deynost===d?"#1e293b":"#f8fafc",color:form.deynost===d?"#fff":"#475569",fontSize:14,fontWeight:600,cursor:"pointer"}} onClick={()=>setForm(f=>({...f,deynost:d}))}>{d}</button>)}
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
+                <button style={{background:"#3b82f6",color:"#fff",border:"none",borderRadius:12,padding:"13px 0",fontSize:15,fontWeight:700,cursor:"pointer",opacity:(form.marka.trim()&&form.deynost)?1:0.45}} onClick={saveBooking}>Запази</button>
+                <button style={{background:"#f1f5f9",color:"#475569",border:"none",borderRadius:12,padding:"13px 0",fontSize:15,fontWeight:600,cursor:"pointer"}} onClick={closeModal}>Отказ</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>}
+      {toast&&<div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#1e293b",color:"#fff",padding:"12px 24px",borderRadius:20,fontSize:14,fontWeight:600,zIndex:200,whiteSpace:"nowrap"}}>{toast}</div>}
+    </div>
+  );
+}
+
+function ACField({label,value,onChange,suggestions,placeholder,autoFocus}) {
+  const [open,setOpen]=useState(false);
+  const ref=useRef(null);
+  const filtered=value.trim().length===0?suggestions:suggestions.filter(s=>s.toLowerCase().startsWith(value.toLowerCase()));
+  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
+  return(
+    <div style={{marginBottom:14,position:"relative"}} ref={ref}>
+      <label style={{fontSize:11,color:"#64748b",fontWeight:700,display:"block",marginBottom:6,textTransform:"uppercase"}}>{label}</label>
+      <input style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"1.5px solid #e2e8f0",fontSize:15,color:"#1e293b",outline:"none",boxSizing:"border-box",background:"#f8fafc"}}
+        placeholder={placeholder} value={value} autoFocus={autoFocus}
+        onChange={e=>{onChange(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)}/>
+      {open&&filtered.length>0&&<div style={{position:"absolute",zIndex:300,background:"#fff",border:"1.5px solid #e2e8f0",borderRadius:12,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",top:"100%",left:0,right:0,overflow:"hidden"}}>
+        {filtered.slice(0,8).map(s=><div key={s} style={{padding:"11px 14px",fontSize:14,color:"#1e293b",cursor:"pointer",borderBottom:"1px solid #f1f5f9"}} onMouseDown={()=>{onChange(s);setOpen(false);}}>{s}</div>)}
+      </div>}
+    </div>
+  );
+}
+
+function App() {
+  const [session,setSession]=useState(null),[loading,setLoading]=useState(true);
+  useEffect(()=>{try{const s=localStorage.getItem("sb_session");if(s)setSession(JSON.parse(s));}catch{}setLoading(false);},[]);
+  if(loading)return <div style={{minHeight:"100vh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:18}}>Зареждане…</div>;
+  if(!session)return <LoginScreen onLogin={setSession}/>;
+  return <Scheduler session={session} onLogout={()=>setSession(null)}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
