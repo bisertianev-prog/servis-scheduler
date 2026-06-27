@@ -28,10 +28,40 @@ const sb = {
       method: "POST", headers: this.headers,
       body: JSON.stringify({ email, password }),
     });
-    return r.json();
+    const data = await r.json();
+    if (data.access_token) {
+      localStorage.setItem("sb_access_token", data.access_token);
+      localStorage.setItem("sb_refresh_token", data.refresh_token);
+      localStorage.setItem("sb_email", data.user?.email);
+    }
+    return data;
+  },
+  async refreshSession() {
+    const refresh_token = localStorage.getItem("sb_refresh_token");
+    if (!refresh_token) return null;
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST", headers: this.headers,
+      body: JSON.stringify({ refresh_token }),
+    });
+    const data = await r.json();
+    if (data.access_token) {
+      localStorage.setItem("sb_access_token", data.access_token);
+      localStorage.setItem("sb_refresh_token", data.refresh_token);
+      return { token: data.access_token, email: localStorage.getItem("sb_email") };
+    }
+    return null;
+  },
+  getStoredSession() {
+    const token = localStorage.getItem("sb_access_token");
+    const email = localStorage.getItem("sb_email");
+    if (token && email) return { token, email };
+    return null;
   },
   async signOut(token) {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.authHeaders(token) });
+    localStorage.removeItem("sb_access_token");
+    localStorage.removeItem("sb_refresh_token");
+    localStorage.removeItem("sb_email");
   },
   async loadBookings(token) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*`, { headers: this.authHeaders(token) });
@@ -105,7 +135,6 @@ function LoginScreen({onLogin}) {
     setLoading(true);setError("");
     const data=await sb.signIn(email.trim(),password);
     if(data.access_token){
-      localStorage.setItem("sb_session",JSON.stringify({token:data.access_token,email:data.user?.email}));
       onLogin({token:data.access_token,email:data.user?.email});
     } else {
       setError(data.error_description||data.msg||"Грешен имейл или парола");
@@ -151,6 +180,15 @@ function Scheduler({session,onLogout}) {
   const [syncing,setSyncing]=useState(false);
   const myLockRef=useRef(null),lockTimerRef=useRef(null);
 
+  // Auto-refresh token every 50 minutes
+  useEffect(()=>{
+    const id=setInterval(async()=>{
+      const refreshed=await sb.refreshSession();
+      if(!refreshed) onLogout();
+    }, 50*60*1000);
+    return()=>clearInterval(id);
+  },[]);
+
   const rowsToMap=rows=>{const map={};for(const r of rows){const slot=r.slot.slice(0,5);if(!map[r.date])map[r.date]={};map[r.date][slot]={marka:r.marka,cvqt:r.cvqt||"",deynost:r.deynost};}return map;};
   const locksToMap=rows=>{const map={},now=Date.now();for(const r of rows){if(now-new Date(r.locked_at).getTime()<LOCK_TTL)map[r.id]={device_id:r.device_id,locked_at:r.locked_at};}return map;};
 
@@ -182,7 +220,7 @@ function Scheduler({session,onLogout}) {
   },[form,modal,token,releaseLock,onLogout]);
   const deleteBooking=useCallback(async()=>{if(!modal)return;setBookings(b=>{const n={...b,[modal.dateKey]:{...(b[modal.dateKey]||{})}};delete n[modal.dateKey][modal.slot];return n;});setModal(null);setDeleteConfirm(false);showToast("✓ Резервацията е изтрита");await sb.deleteBooking(token,modal.dateKey,modal.slot);},[modal,token]);
   const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2800);};
-  const handleLogout=async()=>{await sb.signOut(token);localStorage.removeItem("sb_session");onLogout();};
+  const handleLogout=async()=>{await sb.signOut(token);onLogout();};
 
   const dateKey=fmtDate(currentDate),dayBook=bookings[dateKey]||{},bookedCnt=Object.keys(dayBook).length,freeCnt=ALL_SLOTS.length-bookedCnt,isToday=dateKey===todayKey,wDays=weekDays(currentDate);
   const slotStatus=(dk,slot)=>{if((bookings[dk]||{})[slot])return"booked";const lk=locks[`${dk}|${slot}`];if(lk&&lk.device_id!==DEVICE_ID)return"locked";return"free";};
@@ -294,10 +332,23 @@ function ACField({label,value,onChange,suggestions,placeholder,autoFocus}) {
 
 function App() {
   const [session,setSession]=useState(null),[loading,setLoading]=useState(true);
-  useEffect(()=>{try{const s=localStorage.getItem("sb_session");if(s)setSession(JSON.parse(s));}catch{}setLoading(false);},[]);
+  useEffect(()=>{
+    (async()=>{
+      const stored = sb.getStoredSession();
+      if (stored) {
+        // Try refresh to verify token is still valid
+        const refreshed = await sb.refreshSession();
+        if (refreshed) setSession(refreshed);
+        else { localStorage.clear(); }
+      }
+      setLoading(false);
+    })();
+  },[]);
+  const handleLogin = (sess) => setSession(sess);
+  const handleLogout = () => { setSession(null); };
   if(loading)return <div style={{minHeight:"100vh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:18}}>Зареждане…</div>;
-  if(!session)return <LoginScreen onLogin={setSession}/>;
-  return <Scheduler session={session} onLogout={()=>setSession(null)}/>;
+  if(!session)return <LoginScreen onLogin={handleLogin}/>;
+  return <Scheduler session={session} onLogout={handleLogout}/>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
