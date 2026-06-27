@@ -204,20 +204,24 @@ function Scheduler({session,onLogout}) {
   const saveBooking=useCallback(async()=>{
     if(!form.marka.trim()||!form.deynost||!modal)return;
     const entry={marka:form.marka.trim(),cvqt:form.cvqt.trim(),deynost:form.deynost};
-    const ok=await sb.upsertBooking(token,{date:modal.dateKey,slot:modal.slot+":00",...entry});
+    const payload={date:modal.dateKey,slot:modal.slot+":00",...entry};
+    let ok=await sb.upsertBooking(token,payload);
+    if(!ok){
+      // Token изтекъл — refresh и опитай отново
+      const refreshed=await sb.refreshSession();
+      if(refreshed) ok=await sb.upsertBooking(refreshed.token,payload);
+    }
     if(ok){
       setBookings(b=>({...b,[modal.dateKey]:{...(b[modal.dateKey]||{}),[modal.slot]:entry}}));
       await releaseLock();
       setModal(null);
       showToast("✓ Резервацията е запазена");
     } else {
-      // Token може да е изтекъл — изчисти сесията и поискай нов вход
-      localStorage.removeItem("sb_session");
+      showToast("⚠️ Грешка при запис — опитай отново");
       await releaseLock();
       setModal(null);
-      onLogout();
     }
-  },[form,modal,token,releaseLock,onLogout]);
+  },[form,modal,token,releaseLock]);
   const deleteBooking=useCallback(async()=>{if(!modal)return;setBookings(b=>{const n={...b,[modal.dateKey]:{...(b[modal.dateKey]||{})}};delete n[modal.dateKey][modal.slot];return n;});setModal(null);setDeleteConfirm(false);showToast("✓ Резервацията е изтрита");await sb.deleteBooking(token,modal.dateKey,modal.slot);},[modal,token]);
   const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2800);};
   const handleLogout=async()=>{await sb.signOut(token);onLogout();};
