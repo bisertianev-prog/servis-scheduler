@@ -133,6 +133,7 @@ function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function skipWE(d,dir){let x=addDays(d,dir);while(isWeekend(x))x=addDays(x,dir);return x;}
 function weekDays(date){const d=new Date(date),day=d.getDay(),diff=day===0?-6:1-day;return[0,1,2,3,4].map(i=>addDays(addDays(d,diff),i));}
 const LOGO_URL = "https://bisertianev-prog.github.io/servis-scheduler/logo.jpg";
+const DEVICE_ID = `dev-${Math.random().toString(36).slice(2,7)}`;
 
 function HTBadge() {
   return (
