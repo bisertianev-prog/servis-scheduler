@@ -125,8 +125,26 @@ function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function skipWE(d,dir){let x=addDays(d,dir);while(isWeekend(x))x=addDays(x,dir);return x;}
 function weekDays(date){const d=new Date(date),day=d.getDay(),diff=day===0?-6:1-day;return[0,1,2,3,4].map(i=>addDays(addDays(d,diff),i));}
 const DEVICE_ID=`dev-${Math.random().toString(36).slice(2,7)}`;
-const CAR_BRANDS=["Alfa Romeo","Audi","BMW","Chevrolet","Citroën","Dacia","Fiat","Ford","Honda","Hyundai","Jaguar","Jeep","Kia","Lada","Land Rover","Lexus","Mazda","Mercedes-Benz","Mini","Mitsubishi","Nissan","Opel","Peugeot","Porsche","Renault","Seat","Skoda","Subaru","Suzuki","Tesla","Toyota","Volkswagen","Volvo"];
+const CAR_BRANDS=["Audi","BMW","Cadillac","Chevrolet","Citroen","Dodge","Ferrari","Fiat","Ford","Honda","Infiniti","Jeep","Lamborghini","Lexus","Mazda","Mercedes","Mitsubishi","Nissan","Peugeot","Porsche","Renault","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 const CAR_COLORS=["Бял","Черен","Сив","Сребрист","Червен","Син","Зелен","Жълт","Оранжев","Кафяв","Бежов","Виолетов","Златист","Тъмносин","Тъмночервен","Перлен"];
+
+// Брои използването на марките от резервациите и сортира
+function getSortedBrands(bookings) {
+  const counts = {};
+  Object.values(bookings).forEach(day => {
+    Object.values(day).forEach(b => {
+      if (b.marka) counts[b.marka] = (counts[b.marka] || 0) + 1;
+    });
+  });
+  const top10 = CAR_BRANDS
+    .filter(b => counts[b])
+    .sort((a,b) => counts[b] - counts[a])
+    .slice(0, 10);
+  const rest = CAR_BRANDS
+    .filter(b => !top10.includes(b))
+    .sort((a,b) => a.localeCompare(b));
+  return top10.length > 0 ? [...top10, "─────────", ...rest] : rest;
+}
 
 function LoginScreen({onLogin}) {
   const [email,setEmail]=useState(""),[ password,setPassword]=useState(""),[ loading,setLoading]=useState(false),[error,setError]=useState("");
@@ -294,9 +312,8 @@ function Scheduler({session,onLogout}) {
           ):(
             <>
               <div style={{fontSize:18,fontWeight:700,color:"#1e293b",marginBottom:18}}>Нова резервация — {modal.slot}</div>
-              {[["marka","Марка *",CAR_BRANDS,"Напр. Audi, BMW…",true],["cvqt","Цвят",CAR_COLORS,"Напр. Червен, Бял…",false]].map(([field,lbl,sugg,ph,af])=>(
-                <ACField key={field} label={lbl} value={form[field]} onChange={v=>setForm(f=>({...f,[field]:v}))} suggestions={sugg} placeholder={ph} autoFocus={af}/>
-              ))}
+              <ACField label="Марка *" value={form.marka} onChange={v=>setForm(f=>({...f,marka:v}))} suggestions={getSortedBrands(bookings)} placeholder="Напр. Mercedes, BMW…" autoFocus={true}/>
+              <ACField label="Цвят" value={form.cvqt} onChange={v=>setForm(f=>({...f,cvqt:v}))} suggestions={CAR_COLORS} placeholder="Напр. Червен, Бял…" autoFocus={false}/>
               <div style={{marginBottom:14}}>
                 <label style={{fontSize:11,color:"#64748b",fontWeight:700,display:"block",marginBottom:6,textTransform:"uppercase"}}>Дейност *</label>
                 <div style={{display:"flex",gap:10}}>
@@ -319,7 +336,9 @@ function Scheduler({session,onLogout}) {
 function ACField({label,value,onChange,suggestions,placeholder,autoFocus}) {
   const [open,setOpen]=useState(false);
   const ref=useRef(null);
-  const filtered=value.trim().length===0?suggestions:suggestions.filter(s=>s.toLowerCase().startsWith(value.toLowerCase()));
+  const filtered = value.trim().length===0
+    ? suggestions
+    : suggestions.filter(s => s==="─────────" || s.toLowerCase().startsWith(value.toLowerCase()));
   useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
   return(
     <div style={{marginBottom:14,position:"relative"}} ref={ref}>
@@ -327,8 +346,11 @@ function ACField({label,value,onChange,suggestions,placeholder,autoFocus}) {
       <input style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"1.5px solid #e2e8f0",fontSize:15,color:"#1e293b",outline:"none",boxSizing:"border-box",background:"#f8fafc"}}
         placeholder={placeholder} value={value} autoFocus={autoFocus}
         onChange={e=>{onChange(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)}/>
-      {open&&filtered.length>0&&<div style={{position:"absolute",zIndex:300,background:"#fff",border:"1.5px solid #e2e8f0",borderRadius:12,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",top:"100%",left:0,right:0,overflow:"hidden"}}>
-        {filtered.slice(0,8).map(s=><div key={s} style={{padding:"11px 14px",fontSize:14,color:"#1e293b",cursor:"pointer",borderBottom:"1px solid #f1f5f9"}} onMouseDown={()=>{onChange(s);setOpen(false);}}>{s}</div>)}
+      {open&&filtered.length>0&&<div style={{position:"absolute",zIndex:300,background:"#fff",border:"1.5px solid #e2e8f0",borderRadius:12,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",top:"100%",left:0,right:0,overflow:"hidden",maxHeight:280,overflowY:"auto"}}>
+        {filtered.map((s,i)=>s==="─────────"
+          ? <div key="sep" style={{padding:"4px 14px",fontSize:11,color:"#94a3b8",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",userSelect:"none"}}>Всички марки</div>
+          : <div key={s} style={{padding:"11px 14px",fontSize:14,color:"#1e293b",cursor:"pointer",borderBottom:"1px solid #f1f5f9"}} onMouseDown={()=>{onChange(s);setOpen(false);}}>{s}</div>
+        )}
       </div>}
     </div>
   );
