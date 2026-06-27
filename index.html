@@ -44,7 +44,12 @@ const sb = {
       headers: { ...this.authHeaders(token), "Prefer": "resolution=merge-duplicates,return=representation" },
       body: JSON.stringify(booking),
     });
-    return r.ok;
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({}));
+      console.error("Supabase upsert error:", r.status, err);
+      return false;
+    }
+    return true;
   },
   async deleteBooking(token, date, slot) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/bookings?date=eq.${date}&slot=eq.${slot}:00`, {
@@ -158,8 +163,23 @@ function Scheduler({session,onLogout}) {
 
   const openSlot=useCallback(async(dateKey,slot)=>{const bk=(bookings[dateKey]||{})[slot];if(bk){setModal({dateKey,slot,mode:"view"});return;}const lockId=`${dateKey}|${slot}`;const ex=locks[lockId];if(ex&&ex.device_id!==DEVICE_ID){showToast("⏳ Часът се въвежда от друг служител");return;}const ok=await acquireLock(dateKey,slot);if(!ok){showToast("⏳ Часът се въвежда от друг служител");return;}lockTimerRef.current=setInterval(refreshLock,8000);setForm({marka:"",cvqt:"",deynost:""});setModal({dateKey,slot,mode:"add"});},[bookings,locks,acquireLock,refreshLock]);
   const closeModal=useCallback(async()=>{await releaseLock();setModal(null);setDeleteConfirm(false);},[releaseLock]);
-  const saveBooking=useCallback(async()=>{if(!form.marka.trim()||!form.deynost||!modal)return;const entry={marka:form.marka.trim(),cvqt:form.cvqt.trim(),deynost:form.deynost};// Persist FIRST, then update UI
-    const ok=await sb.upsertBooking(token,{date:modal.dateKey,slot:modal.slot+":00",...entry});if(ok){setBookings(b=>({...b,[modal.dateKey]:{...(b[modal.dateKey]||{}),[modal.slot]:entry}}));await releaseLock();setModal(null);showToast("✓ Резервацията е запазена");}else{showToast("⚠️ Грешка при запис — опитай отново");}},[form,modal,token,releaseLock]);
+  const saveBooking=useCallback(async()=>{
+    if(!form.marka.trim()||!form.deynost||!modal)return;
+    const entry={marka:form.marka.trim(),cvqt:form.cvqt.trim(),deynost:form.deynost};
+    const ok=await sb.upsertBooking(token,{date:modal.dateKey,slot:modal.slot+":00",...entry});
+    if(ok){
+      setBookings(b=>({...b,[modal.dateKey]:{...(b[modal.dateKey]||{}),[modal.slot]:entry}}));
+      await releaseLock();
+      setModal(null);
+      showToast("✓ Резервацията е запазена");
+    } else {
+      // Token може да е изтекъл — изчисти сесията и поискай нов вход
+      localStorage.removeItem("sb_session");
+      await releaseLock();
+      setModal(null);
+      onLogout();
+    }
+  },[form,modal,token,releaseLock,onLogout]);
   const deleteBooking=useCallback(async()=>{if(!modal)return;setBookings(b=>{const n={...b,[modal.dateKey]:{...(b[modal.dateKey]||{})}};delete n[modal.dateKey][modal.slot];return n;});setModal(null);setDeleteConfirm(false);showToast("✓ Резервацията е изтрита");await sb.deleteBooking(token,modal.dateKey,modal.slot);},[modal,token]);
   const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2800);};
   const handleLogout=async()=>{await sb.signOut(token);localStorage.removeItem("sb_session");onLogout();};
