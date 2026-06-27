@@ -346,6 +346,7 @@ function Scheduler({session,onLogout}) {
           <button style={{flex:1,border:"none",fontSize:13,fontWeight:600,padding:"8px 0",borderRadius:10,cursor:"pointer",background:view==="day"?"#3b82f6":"#334155",color:view==="day"?"#fff":"#94a3b8"}} onClick={()=>setView("day")}>Ден</button>
           <button style={{flex:1,border:"none",fontSize:13,fontWeight:600,padding:"8px 0",borderRadius:10,cursor:"pointer",background:view==="week"?"#3b82f6":"#334155",color:view==="week"?"#fff":"#94a3b8"}} onClick={()=>setView("week")}>Седмица</button>
           {!isToday&&<button style={{border:"none",fontSize:13,fontWeight:600,padding:"8px 12px",borderRadius:10,cursor:"pointer",background:"#475569",color:"#e2e8f0"}} onClick={()=>{const t=new Date();setCurrentDate(isWeekend(t)?skipWE(t,1):t);}}>Днес</button>}
+        </div>
         {view==="day"&&<div style={{display:"flex",gap:16,marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:9,height:9,borderRadius:"50%",background:"#ef4444"}}/><span style={{fontSize:13,color:"#cbd5e1"}}>{bookedCnt} заети</span></div>
           <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:9,height:9,borderRadius:"50%",background:"#22c55e"}}/><span style={{fontSize:13,color:"#cbd5e1"}}>{freeCnt} свободни</span></div>
