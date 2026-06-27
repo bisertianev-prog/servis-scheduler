@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Сервизен Планер</title>
+<title>АвтоГеометрия — Планер</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -124,7 +124,7 @@ function isWeekend(d){return d.getDay()===0||d.getDay()===6;}
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function skipWE(d,dir){let x=addDays(d,dir);while(isWeekend(x))x=addDays(x,dir);return x;}
 function weekDays(date){const d=new Date(date),day=d.getDay(),diff=day===0?-6:1-day;return[0,1,2,3,4].map(i=>addDays(addDays(d,diff),i));}
-const DEVICE_ID=`dev-${Math.random().toString(36).slice(2,7)}`;
+const LOGO_URL = "https://bisertianev-prog.github.io/servis-scheduler/logo.jpg";
 const CAR_BRANDS=["Audi","BMW","Cadillac","Chevrolet","Citroen","Dodge","Ferrari","Fiat","Ford","Honda","Infiniti","Jeep","Lamborghini","Lexus","Mazda","Mercedes","Mitsubishi","Nissan","Peugeot","Porsche","Renault","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 const CAR_COLORS=["Бял","Черен","Сив","Сребрист","Червен","Син","Зелен","Жълт","Оранжев","Кафяв","Бежов","Виолетов","Златист","Тъмносин","Тъмночервен","Перлен"];
 
@@ -162,8 +162,9 @@ function LoginScreen({onLogin}) {
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:"#1e293b",borderRadius:24,padding:"40px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
-        <div style={{fontSize:48,textAlign:"center",marginBottom:12}}>🔧</div>
-        <div style={{fontSize:24,fontWeight:800,color:"#fff",textAlign:"center",marginBottom:4}}>Сервизен Планер</div>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <img src={LOGO_URL} alt="АвтоГеометрия" style={{width:180,height:180,objectFit:"contain",borderRadius:16}} />
+        </div>
         <div style={{fontSize:13,color:"#64748b",textAlign:"center",marginBottom:28}}>Само оторизиран персонал</div>
         <div style={{marginBottom:16}}>
           <label style={{fontSize:11,color:"#94a3b8",fontWeight:700,display:"block",marginBottom:6,textTransform:"uppercase"}}>Имейл</label>
@@ -252,8 +253,11 @@ function Scheduler({session,onLogout}) {
     <div style={{fontFamily:"'Segoe UI',system-ui,sans-serif",background:"#f1f5f9",minHeight:"100vh",maxWidth:480,margin:"0 auto",paddingBottom:40}}>
       <div style={{background:"#1e293b",color:"#fff",padding:"20px 16px 14px",borderRadius:"0 0 20px 20px",marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-          <div>
-            {view==="day"?(<><div style={{fontSize:22,fontWeight:700}}>{DAYS_FULL[currentDate.getDay()]}</div><div style={{fontSize:13,color:"#94a3b8",marginTop:2}}>{currentDate.getDate()} {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}</div></>):(<><div style={{fontSize:22,fontWeight:700}}>Седмица</div><div style={{fontSize:13,color:"#94a3b8",marginTop:2}}>{wDays[0].getDate()} – {wDays[4].getDate()} {MONTHS[wDays[4].getMonth()]}</div></>)}
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <img src={LOGO_URL} alt="logo" style={{width:44,height:44,objectFit:"contain",borderRadius:8,background:"#fff"}} />
+            <div>
+              {view==="day"?(<><div style={{fontSize:18,fontWeight:700}}>{DAYS_FULL[currentDate.getDay()]}</div><div style={{fontSize:12,color:"#94a3b8",marginTop:1}}>{currentDate.getDate()} {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}</div></>):(<><div style={{fontSize:18,fontWeight:700}}>Седмица</div><div style={{fontSize:12,color:"#94a3b8",marginTop:1}}>{wDays[0].getDate()} – {wDays[4].getDate()} {MONTHS[wDays[4].getMonth()]}</div></>)}
+            </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
             {syncing&&<div style={{width:8,height:8,borderRadius:"50%",background:"#38bdf8"}}/>}
